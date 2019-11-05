@@ -733,13 +733,17 @@ public class CassandraDatastore implements Datastore, ProcessorHandler, KairosMe
 			if (deleteQuery.getStartTime() <= rowKeyTimestamp && (deleteQuery.getEndTime() >= rowKeyTimestamp + ROW_WIDTH - 1))
 			{
 				//System.out.println("Delete entire row");
-				BoundStatement statement = new BoundStatement(m_schema.psDataPointsDeleteRow);
-				statement.setBytesUnsafe(0, DATA_POINTS_ROW_KEY_SERIALIZER.toByteBuffer(rowKey));
-				statement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
-				m_session.execute(statement);
+				if (m_schema.psDataPointsDeleteRow != null) {
+					BoundStatement statement = new BoundStatement(m_schema.psDataPointsDeleteRow);
+					statement.setBytesUnsafe(0, DATA_POINTS_ROW_KEY_SERIALIZER.toByteBuffer(rowKey));
+					statement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
+					m_session.execute(statement);
+				} else {
+					deleteDataPointsByKey(rowKey);
+				}
 
 				//Delete from old row keys
-				statement = new BoundStatement(m_schema.psRowKeyIndexDelete);
+				BoundStatement statement = new BoundStatement(m_schema.psRowKeyIndexDelete);
 				statement.setBytesUnsafe(0, serializeString(rowKey.getMetricName()));
 				statement.setBytesUnsafe(1, DATA_POINTS_ROW_KEY_SERIALIZER.toByteBuffer(rowKey));
 				statement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
@@ -799,13 +803,17 @@ public class CassandraDatastore implements Datastore, ProcessorHandler, KairosMe
 		if (deleteAll)
 		{
 			//System.out.println("Delete All");
-			BoundStatement statement = new BoundStatement(m_schema.psRowKeyIndexDeleteRow);
-			statement.setBytesUnsafe(0, serializeString(deleteQuery.getName()));
-			statement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
-			m_session.executeAsync(statement);
+			if (m_schema.psRowKeyIndexDeleteRow != null) {
+				BoundStatement statement = new BoundStatement(m_schema.psRowKeyIndexDeleteRow);
+				statement.setBytesUnsafe(0, serializeString(deleteQuery.getName()));
+				statement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
+				m_session.executeAsync(statement);
+			} else {
+				deleteRowKeyIndexByKey(deleteQuery.getName());
+			}
 
 			//Delete from string index
-			statement = new BoundStatement(m_schema.psStringIndexDelete);
+			BoundStatement statement = new BoundStatement(m_schema.psStringIndexDelete);
 			statement.setBytesUnsafe(0, serializeString(ROW_KEY_METRIC_NAMES));
 			statement.setBytesUnsafe(1, serializeString(deleteQuery.getName()));
 			statement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
@@ -1201,6 +1209,41 @@ outer:
 	{
 		@Override
 		public void complete() {} //Dont care
+	}
+
+	private void deleteDataPointsByKey(DataPointsRowKey rowKey)
+	{
+		BoundStatement boundStatement = new BoundStatement(m_schema.psDataPointsQueryByKey);
+		boundStatement.setBytesUnsafe(0, DATA_POINTS_ROW_KEY_SERIALIZER.toByteBuffer(rowKey));
+		boundStatement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
+		ResultSet resultSet = m_session.execute(boundStatement);
+		while (!resultSet.isExhausted()) {
+			Row row = resultSet.one();
+			ByteBuffer bytes = row.getBytes(0);
+
+			boundStatement = new BoundStatement(m_schema.psDataPointsDelete);
+			boundStatement.setBytesUnsafe(0, DATA_POINTS_ROW_KEY_SERIALIZER.toByteBuffer(rowKey));
+			boundStatement.setBytesUnsafe(1, bytes);
+			boundStatement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
+			m_session.execute(boundStatement);
+		}
+	}
+
+	private void deleteRowKeyIndexByKey(String key) {
+		BoundStatement boundStatement = new BoundStatement(m_schema.psRowKeyIndexQueryByKey);
+		boundStatement.setBytesUnsafe(0, serializeString(key));
+		boundStatement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
+		ResultSet resultSet = m_session.execute(boundStatement);
+		while (!resultSet.isExhausted()) {
+			Row row = resultSet.one();
+			ByteBuffer bytes = row.getBytes(0);
+
+			boundStatement = new BoundStatement(m_schema.psRowKeyIndexDelete);
+			boundStatement.setBytesUnsafe(0, serializeString(key));
+			boundStatement.setBytesUnsafe(1, bytes);
+			boundStatement.setConsistencyLevel(m_cassandraConfiguration.getDataReadLevel());
+			m_session.execute(boundStatement);
+		}
 	}
 
 }

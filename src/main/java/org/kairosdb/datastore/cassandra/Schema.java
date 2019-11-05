@@ -87,7 +87,7 @@ public class Schema
 
 	//All inserts and deletes add millisecond timestamp consistency with old code and TWCS instead of nanos
 	public static final String DATA_POINTS_INSERT = "INSERT INTO data_points " +
-			"(key, column1, value) VALUES (?, ?, ?) USING TTL ? AND TIMESTAMP ?";
+			"(key, column1, value) VALUES (?, ?, ?) USING TTL ? ";//AND TIMESTAMP ?";
 
 	public static final String ROW_KEY_TIME_INSERT = "INSERT INTO row_key_time_index " +
 			"(metric, table_name, row_time) VALUES (?, 'data_points', ?) USING TTL ?";
@@ -184,6 +184,10 @@ public class Schema
 	public static final String SERVICE_INDEX_INSERT_MODIFIED_TIME = "INSERT INTO service_index " +
 			"(service, service_key, mtime) VALUES (?, ?, now())";
 
+	public static final String DATA_POINTS_QUERY_BY_KEY = "SELECT column1 FROM data_points WHERE key = ? ";
+
+	public static final String ROW_KEY_INDEX_QUERY_BY_KEY = "SELECT column1 FROM row_key_index WHERE key = ?";
+
 	public final PreparedStatement psDataPointsInsert;
 	//public final PreparedStatement m_psInsertRowKey;
 	public final PreparedStatement psStringIndexInsert;
@@ -194,10 +198,10 @@ public class Schema
 	public final PreparedStatement psRowKeyIndexQuery;
 	public final PreparedStatement psRowKeyQuery;
 	public final PreparedStatement psRowKeyTimeQuery;
-	public final PreparedStatement psDataPointsDeleteRow;
+	public PreparedStatement psDataPointsDeleteRow;
 	public PreparedStatement psDataPointsDeleteRange;
 	public final PreparedStatement psRowKeyIndexDelete;
-	public final PreparedStatement psRowKeyIndexDeleteRow;
+	public PreparedStatement psRowKeyIndexDeleteRow;
 	public final PreparedStatement psDataPointsQueryDesc;
 	public final PreparedStatement psRowKeyTimeInsert;
 	public final PreparedStatement psRowKeyInsert;
@@ -215,6 +219,8 @@ public class Schema
 	public final PreparedStatement psRowKeyTimeDelete;
 	public final PreparedStatement psRowKeyDelete;
 	public final PreparedStatement psDataPointsDelete;
+	public final PreparedStatement psDataPointsQueryByKey;
+	public final PreparedStatement psRowKeyIndexQueryByKey;
 
 	private final Session m_session;
 
@@ -242,6 +248,8 @@ public class Schema
 		psRowKeyQuery = m_session.prepare(ROW_KEY_QUERY);
 		psRowKeyTimeQuery = m_session.prepare(ROW_KEY_TIME_QUERY);
 		psRowKeyTimeDelete = m_session.prepare(ROW_KEY_TIME_DELETE);
+		psDataPointsQueryByKey = m_session.prepare(DATA_POINTS_QUERY_BY_KEY);
+		psRowKeyIndexQueryByKey = m_session.prepare(ROW_KEY_INDEX_QUERY_BY_KEY);
 
 		try
 		{
@@ -258,8 +266,20 @@ public class Schema
 		psRowKeyIndexDelete = m_session.prepare(ROW_KEY_INDEX_DELETE);
 
 		//These three queries currently dont work with YugaByte
-		psDataPointsDeleteRow = m_session.prepare(DATA_POINTS_DELETE_ROW);
-		psRowKeyIndexDeleteRow = m_session.prepare(ROW_KEY_INDEX_DELETE_ROW);
+		try		{
+			psDataPointsDeleteRow = m_session.prepare(DATA_POINTS_DELETE_ROW);
+		}
+		catch (Exception e) {
+			logger.warn("Unable to perform efficient delete by key for DataPoints");
+		}
+
+		try	{
+			psRowKeyIndexDeleteRow = m_session.prepare(ROW_KEY_INDEX_DELETE_ROW);
+
+		} catch (Exception e) {
+			logger.warn("Unable to perform efficient delete by key for RowKeyIndexDeleteRow");
+		}
+
 		psRowKeyDelete = m_session.prepare(ROW_KEY_DELETE);
 		/*psDataPointsDeleteRow = null;
 		psRowKeyIndexDeleteRow = null;
